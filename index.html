@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="UTF-8">
+	<title>Prova 2</title>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+	<script src="https://d3js.org/d3.v7.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/d3-tip/0.9.1/d3-tip.min.js"></script>	
+	<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+	<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js"></script>
+</head>
+
+<body>
+	<canvas id="myChart1" width="400" height="400"></canvas>
+	<canvas id="myChart2" width="400" height="400"></canvas>
+	<label for="datepicker-start">Seleziona la data di inizio:</label>
+	<input type="text" id="datepicker-start" name="datepicker-start">
+
+	<label for="datepicker-end">Seleziona la data di fine:</label>
+	<input type="text" id="datepicker-end" name="datepicker-end">
+
+	<button id="aggiorna">Aggiorna</button>
+
+	<script>
+		function filterTimestamps(timestamps, start_date, end_date) {
+			const start_timestamp = moment(start_date).unix();
+			const end_timestamp = moment(end_date).unix();
+			return timestamps.filter(t => t >= start_timestamp && t < end_timestamp);
+		}
+
+
+
+		const url = 'https://raw.githubusercontent.com/RiccardoDelgaudio/data/main/data.txt';
+		axios.get(url)
+			.then(response => {
+				const timestamps = response.data.split('\n').map(parseFloat);
+				// Impostazione dei datepicker
+				const default_end_date = moment().format("YYYY-MM-DD HH:mm:ss");
+				const default_start_date = moment().subtract(1, "day").format("YYYY-MM-DD HH:mm:ss");
+				const start_date = default_start_date;
+				const end_date = default_end_date;
+				update(start_date,end_date);
+
+				$("#datepicker-start").datepicker({
+					dateFormat: "yy-mm-dd",
+					defaultDate: default_start_date,
+				});
+
+				$("#datepicker-end").datepicker({
+					dateFormat: "yy-mm-dd",
+					defaultDate: default_end_date,
+				});
+				$("#datepicker-start").datepicker({
+					dateFormat: "yy-mm-dd",
+					defaultDate: default_start_date,
+					onSelect: function (selectedDate) {
+						$("#datepicker-end").datepicker("option", "minDate", selectedDate);
+					},
+				});
+
+				$("#datepicker-end").datepicker({
+					dateFormat: "yy-mm-dd",
+					defaultDate: default_end_date,
+					onSelect: function (selectedDate) {
+						$("#datepicker-start").datepicker("option", "maxDate", selectedDate);
+					},
+				});
+
+
+				// Aggiornamento dei dati al click sul pulsante "Aggiorna"
+				$("#aggiorna").click(function () {
+					const start_date = $("#datepicker-start").datepicker("getDate");
+					const end_date = $("#datepicker-end").datepicker("getDate");
+					const formatted_start_date = moment(start_date).format("YYYY-MM-DD HH:mm:ss");
+					const formatted_end_date = moment(end_date).format("YYYY-MM-DD HH:mm:ss");
+					//window.location.href = window.location.origin + window.location.pathname + "?start_date=" + formatted_start_date + "&end_date=" + formatted_end_date;
+					update(formatted_start_date,formatted_end_date);
+				});
+
+				function update(new_start_date, new_end_date) {
+
+					const filtered_timestamps = filterTimestamps(timestamps, new_start_date, new_end_date);
+					const E_kWh = Array.from(Array(filtered_timestamps.length).keys()).map(x => 0.001 * (x + 1));
+
+					// Impostazioni per il grafico
+					const margin = { top: 10, right: 30, bottom: 30, left: 60 };
+					const width = 2000 - margin.left - margin.right;
+					const height = 400 - margin.top - margin.bottom;
+
+					// Aggiunta del canvas
+					const svg = d3.select("body")
+						.append("svg")
+						.attr("width", width + margin.left + margin.right)
+						.attr("height", height + margin.top + margin.bottom)
+						.append("g")
+						.attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+					// Definizione delle scale
+					const x = d3.scaleTime().range([0, width]);
+					const y = d3.scaleLinear().range([height, 0]);
+
+					// Aggiunta degli assi
+					const xAxis = d3.axisBottom(x);
+					const yAxis = d3.axisLeft(y);
+
+
+					// Parsing dei dati
+					const data = filtered_timestamps.map((timestamp, index) => {
+						const date = moment.unix(timestamp).toDate();
+						const value = E_kWh[index];
+						return { x: date, y: value };
+					});
+
+					// Aggiunta della linea
+					const line = d3.line()
+						.x(d => x(d.x))
+						.y(d => y(d.y));
+
+					// Domini delle scale
+					x.domain(d3.extent(data, d => d.x));
+					y.domain([0, d3.max(data, d => d.y)]);
+
+					// Aggiunta della linea al grafico
+					svg.append("path")
+						.datum(data)
+						.attr("fill", "none")
+						.attr("stroke", "steelblue")
+						.attr("stroke-width", 2)
+						.attr("d", line);
+					// Definizione della scala y per i valori del consumo energetico
+					const yScale = d3.scaleLinear()
+						.domain([0, d3.max(data, d => d.y)])
+						.range([height - margin.bottom, margin.top]);
+
+					// Definizione della scala x per la data
+					const xScale = d3.scaleTime()
+						.domain(d3.extent(data, d => d.x))
+						.range([margin.left, width - margin.right]);
+					// Aggiunta degli assi al grafico
+					svg.append("g")
+						.attr("transform", "translate(0," + height + ")",)
+						.call(xAxis);
+					svg.append("g")
+						.call(yAxis);
+					svg.selectAll("path.domain").attr("stroke-width", 4);
+
+					// Aggiunta del rettangolo per il cursore
+					const cursor = svg.append("rect")
+						.attr("class", "cursor")
+						.attr("width", 1)
+						.attr("height", height)
+						.style("fill", "none")
+						.style("pointer-events", "all");
+
+					// Aggiunta del testo per il valore del cursore
+					const cursorText = svg.append("text")
+						.attr("class", "cursor-text")
+						.attr("text-anchor", "middle")
+						.attr("y", height - 20);
+
+					// Aggiunta del testo per il valore dell'asse x nel cursore
+					const cursorXText = svg.append("text")
+						.attr("class", "cursor-x-text")
+						.attr("text-anchor", "middle")
+						.attr("y", height - 5);
+
+					// Aggiunta dell'evento mousemove al grafico per spostare il cursore
+					svg.on("mousemove", function (event) {
+						const [x, y] = d3.pointer(event);
+						cursor.attr("x", x);
+
+						// Trova il valore associato alla posizione x del cursore
+						const bisect = d3.bisector(d => d.x).left;
+						const xDate = xScale.invert(x);
+						const index = bisect(data, xDate, 1);
+						const d0 = data[index - 1];
+						const d1 = data[index];
+						const d = xDate - d0.x > d1.x - xDate ? d1 : d0;
+
+						// Aggiorna il testo del cursore con il valore corrente
+						cursorText.attr("x", x)
+							.text(`${d.y.toFixed(2)} kWh`)
+							.attr("font-weight", "bold");
+
+						cursorXText.attr("x", x)
+							.text(`${xDate.toLocaleDateString()} ${xDate.toLocaleTimeString()}`)
+							.attr("font-weight", "bold");
+					});
+				}
+			});
+
+
+			// const P_W = freq.map(f => f * 3600 / window_size);
+			// const window_size = 10 * 60; // in secondi
+				// const [freq, window_centers] = eventFrequency(filtered_timestamps, window_size);
+	// Plotta P_W
+				// 	const dates2 = window_centers.map(t => new Date(t * 1000));
+				// 	const ctx2 = document.getElementById('myChart2').getContext('2d');
+				// 	const chart2 = new Chart(ctx2, {
+				// 		type: 'line',
+				// 		data: {
+				// 			labels: dates2,
+				// 			datasets: [{
+				// 				label: 'P [W]',
+				// 				data: P_W,
+				// 				fill: false,
+				// 				borderColor: 'rgb(75, 192, 192)',
+				// 				tension: 0.1
+				// 			}]
+				// 		},
+				// 		options: {
+				// 			scales: {
+				// 				x: {
+				// 					type: 'time',
+				// 					time: {
+				// 						parser: 'YYYY-MM-DD HH:mm:ss', // formato della data
+				// 						tooltipFormat: 'HH:mm', // formato della data nel tooltip
+				// 						adapter: moment // utilizza moment.js come adattatore di date
+				// 					}
+				// 				}
+				// 			},
+				// 			plugins: {
+				// 				tooltip: {
+				// 					callbacks: {
+				// 						title: (context) => {
+				// 							return moment(context[0].parsed.x).format('HH:mm');
+				// 						}
+				// 					}
+				// 				}
+				// 			}
+				// 		}
+				// 	});
+
+				// function eventFrequency(timestamps, window_size) {
+		// 	const start_timestamp = timestamps[0];
+		// 	const end_timestamp = timestamps[timestamps.length - 1];
+		// 	const num_windows = Math.floor((end_timestamp - start_timestamp) / window_size);
+		// 	const freq = new Array(num_windows).fill(0);
+		// 	const window_centers = new Array(num_windows).fill(0);
+
+		// 	for (let i = 0; i < timestamps.length; i++) {
+		// 		const timestamp = timestamps[i];
+		// 		const window_index = Math.floor((timestamp - start_timestamp) / window_size);
+		// 		freq[window_index]++;
+		// 		window_centers[window_index] = start_timestamp + window_size * (window_index + 0.5);
+		// 	}
+
+		// 	return [freq, window_centers];
+		// }
+	</script>
+</body>
+
+</html>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.8.2/chart.js"
+	integrity="sha512-/MqITtqQfmjLnDtBC8yxrsERbn3dvqyxtc1B/3x57xp+J3srVBcgyr9VXgDj8BYScxSJ9MauIMY7F9Fr2TJHkQ=="
+	crossorigin="anonymous" referrerpolicy="no-referrer"></script>
